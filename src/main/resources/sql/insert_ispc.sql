@@ -1,0 +1,37 @@
+insert into ft_t_ispc
+  (iss_prc_id,
+   instr_id,
+   prc_tms,
+   prc_srce_typ,
+   prc_qt_meth_typ,
+   prc_typ,
+   prcng_meth_typ,
+   prc_valid_typ,
+   last_chg_usr_id,
+   isid_oid,
+   mkt_oid,
+   addnl_prc_qual_typ,
+   data_src_id,
+   unit_cprc,
+   adjst_tms,
+   last_chg_tms
+   )
+values
+(
+   :iss_prc_id,
+   :instr_id,
+   :prc_tms,
+   'BLOOMBRG',
+   :prc_qt_meth_typ,
+   :prc_typ,
+   'VENDOR',
+   'UNVERIFD',
+   'CIT_BB_HistoryPrc',
+   :isid_oid,
+   :mkt_oid,
+   :addnl_prc_qual_typ,
+   'BB',
+   :unit_cprc,
+   sysdate,
+   sysdate
+)
