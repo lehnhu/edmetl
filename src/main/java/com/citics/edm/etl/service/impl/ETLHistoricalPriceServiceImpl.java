@@ -1,6 +1,5 @@
 package com.citics.edm.etl.service.impl;
 
-import java.io.IOException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -8,7 +7,8 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
-import org.apache.commons.io.IOUtils;
+import javax.annotation.PostConstruct;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 
 import com.citics.edm.etl.bb.LinkageIssue;
 import com.citics.edm.etl.service.IETLHistoricalPriceService;
+import com.citics.edm.service.IEDMPropertyService;
+import com.citics.edm.service.Query;
 
 @Service
 public class ETLHistoricalPriceServiceImpl implements IETLHistoricalPriceService {
@@ -29,6 +31,11 @@ public class ETLHistoricalPriceServiceImpl implements IETLHistoricalPriceService
 	@Autowired
 	@Qualifier("gsJdbcTemplate")
 	private JdbcTemplate gsJdbcTemplate;
+	
+	@Autowired
+	private IEDMPropertyService EDMPropertyService;
+	
+	private Query linkage_sql_query;
 	
 	private static final char[]MAPPING=new char[]{
 		'0','1','2','3','4','5','6','7','8','9',
@@ -40,20 +47,25 @@ public class ETLHistoricalPriceServiceImpl implements IETLHistoricalPriceService
 		'U','V','W','X','Y','Z',
 		'+','-'
 	};
-
-	private String linkage_sql;
-	{
-		try {
-			linkage_sql=IOUtils.toString(this.getClass().getResourceAsStream("/sql/linkage.sql"));
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+	
+	@PostConstruct
+	public void init(){
+		linkage_sql_query =EDMPropertyService.getQuery("edmetl.bb.linkage_sql");
 	}
+
+//	private String linkage_sql;
+//	{
+//		try {
+//			linkage_sql=IOUtils.toString(this.getClass().getResourceAsStream("/sql/linkage.sql"));
+//		} catch (IOException e) {
+//			e.printStackTrace();
+//		}
+//	}
 	
 	public List<LinkageIssue> selectIssueById(final String id,final String idtype,
 			final String marketsector) {
 
-		String sql =linkage_sql;
+		String sql =linkage_sql_query.query();
 
 //		return gsJdbcTemplate.queryForList(sql,LinkageIssue.class,new Object[]{idtype,id,marketsector});
 		return gsJdbcTemplate.execute(sql, new PreparedStatementCallback<List<LinkageIssue>>() {

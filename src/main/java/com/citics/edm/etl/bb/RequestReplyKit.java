@@ -12,14 +12,15 @@ import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.bloomberg.datalic.api.ExtendedFTPConnection;
 import com.bloomberg.datalic.net.DLFTPTypes;
+import com.citics.edm.service.IEDMPropertyService;
 
 @Component
 public class RequestReplyKit {
@@ -39,6 +40,8 @@ public class RequestReplyKit {
 	@Value("${bb.encryptKey}")
 	private String encryptKey;
 	
+	@Autowired
+	private IEDMPropertyService EDMPropertyService;
 	
 	static final String START_OF_FILE = "START-OF-FILE";
 	static final String START_OF_FIELDS = "START-OF-FIELDS";
@@ -48,15 +51,6 @@ public class RequestReplyKit {
 	static final String END_OF_FIELDS = "END-OF-FIELDS";
 	static final String END_OF_DATA = "END-OF-DATA";
 	
-	private String tmpl;
-	{
-		try {
-			tmpl = IOUtils.toString(this.getClass().getResourceAsStream(
-					"/tmpl/hist.req"));
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
 	
 	/**
 	 * @author leon
@@ -64,6 +58,7 @@ public class RequestReplyKit {
 	 * @return
 	 */
 	public String formartRequestMessage(Properties props){
+		String tmpl=EDMPropertyService.getStringProperty("edmetl.bb.request.histpricetmpl");
 		String str=new String(tmpl);
 		Pattern pt=Pattern.compile("(\\$\\{(\\w+)\\})",Pattern.MULTILINE);
 		Matcher mt=pt.matcher(tmpl);

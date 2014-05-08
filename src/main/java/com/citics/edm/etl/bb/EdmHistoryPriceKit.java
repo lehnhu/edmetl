@@ -1,46 +1,62 @@
 package com.citics.edm.etl.bb;
 
-import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.text.ParseException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Map.Entry;
 
-import org.apache.commons.io.IOUtils;
+import javax.annotation.PostConstruct;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.BatchPreparedStatementSetter;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import com.citics.edm.etl.bb.util.IArgAdapter;
 import com.citics.edm.etl.service.IETLHistoricalPriceService;
+import com.citics.edm.service.IEDMPropertyService;
+import com.citics.edm.service.Query;
+import com.google.gson.Gson;
 
 @Component
 public class EdmHistoryPriceKit {
 
-	protected static final Log LOG = LogFactory.getLog(EdmHistoryPriceKit.class);
+	protected static final Log LOG = LogFactory
+		.getLog(EdmHistoryPriceKit.class);
 
-	private String insert_ispc;
+	private Query insert_ispc_query;
+	private Map<String, Map<String, String>> ispc_mapping;
 
 	@Autowired
 	private IETLHistoricalPriceService historicalPriceService;
 
 	@Autowired
-	private ArgHelper argHelper;
+	@Qualifier("gsJdbcTemplate")
+	private JdbcTemplate gsJdbcTemplate;
+	//
+	// @Autowired
+	// private ArgHelper argHelper;
+	//
+	@Autowired
+	private IEDMPropertyService EDMPropertyService;
 
-	public EdmHistoryPriceKit() {
-		try {
-			insert_ispc = IOUtils.toString(this.getClass().getResourceAsStream(
-					"/sql/insert_ispc.sql"));
-		} catch (IOException e) {
-			LOG.fatal(e.getCause(), e);
-		}
+	@SuppressWarnings("unchecked")
+	@PostConstruct
+	public void init() {
+		insert_ispc_query = EDMPropertyService
+			.getQuery("edmetl.bb.linkage_sql");
+		String json_str = EDMPropertyService
+			.getStringProperty("edmetl.bb.ispc_mapping");
+		Gson gson = new Gson();
+		ispc_mapping = gson.fromJson(json_str, Map.class);
 	}
 
 	/**
@@ -56,98 +72,144 @@ public class EdmHistoryPriceKit {
 		return true;
 	}
 
-	protected Map<String, LinkageIssue> linkage(ResponseMessage rm) {
+	public void linkage(List<BBHistoryPriceItem> bblist) {
 		LOG.debug("linkage...");
-		Map<String, LinkageIssue> res = new HashMap<String, LinkageIssue>();
-		List<String[]> columns = rm.getColumns();
-		Set<String> reduceSet = new HashSet<String>();
-		int idxReq = 0;
-		for (; idxReq < rm.getHeaders().length
-				&& "MEM".equalsIgnoreCase(rm.getHeaders()[idxReq]); idxReq++)
-			;
-		if(idxReq==rm.getHeaders().length)
-			throw new RuntimeException("error message type");
-		for (String[] lines : columns) {
-			String reqText = lines[idxReq];
-			reduceSet.add(reqText);
-
-		}
-		for (String reqText : reduceSet) {
-			int idxSpace=reqText.lastIndexOf(' ');
-			String id = reqText.substring(0,idxSpace);
-			String marketsector = reqText.substring(idxSpace+1);
-
-			List<LinkageIssue> issIds = historicalPriceService.selectIssueById(
-					id, "TICKER", marketsector);
-			if (issIds == null || issIds.size() == 0) {
-				LOG.error("cannot find issue by " + reqText);
-			} else if (issIds.size() > 1) {
-				LOG.error("issue duplicate " + issIds);
-			} else {
-				LinkageIssue iss = issIds.get(0);
-				res.put(reqText, iss);
+		Map<String, LinkageIssue> cache = new HashMap<String, LinkageIssue>();
+		for (BBHistoryPriceItem bb : bblist) {
+			String key = bb.getIdContext();
+			LinkageIssue _linkissue = cache.get(key);
+			if (_linkissue == null) {
+				int idxSpace = key.lastIndexOf(' ');
+				String id = key.substring(0, idxSpace);
+				String marketsector = key.substring(idxSpace + 1);
+				List<LinkageIssue> issIds = historicalPriceService
+					.selectIssueById(id, "TICKER", marketsector);
+				if (issIds == null || issIds.size() == 0) {
+					LOG.error("cannot find issue by " + key);
+				} else if (issIds.size() > 1) {
+					LOG.error("issue duplicate " + issIds);
+				} else {
+					_linkissue = issIds.get(0);
+					cache.put(key, _linkissue);
+				}
+				bb.setLinkageIssue(_linkissue);
 			}
 		}
-		return res;
 	}
 
-	protected void produceBatchs(ResponseMessage rm,
-			Map<String, LinkageIssue> linkage, boolean alwaysInsert)
-			throws SQLException {
+	protected void produceBatchs(List<BBHistoryPriceItem> bblist,
+		boolean alwaysInsert) throws SQLException, IllegalArgumentException,
+		IllegalAccessException {
 		if (alwaysInsert) {
-			int idxReq = 0,tmReq=0;
-			for (; idxReq < rm.getHeaders().length
-					&& !"##MEM".equalsIgnoreCase(rm.getHeaders()[idxReq]); idxReq++)
-				;
-			for (; tmReq < rm.getHeaders().length
-					&& !"##DATE".equalsIgnoreCase(rm.getHeaders()[tmReq]); tmReq++)
-				;
-			if(idxReq==rm.getHeaders().length || tmReq== rm.getHeaders().length){
-				throw new RuntimeException("");
-			}
-			String[] headers = rm.getHeaders();
-			List<String[]> lines = rm.getColumns();
-			for (int i = rm.getFieldBeginIndex(); i < headers.length; i++) {
-				String field = headers[i];
-				LOG.info("start load filed:" + field);
-				List<Object[]> args = new ArrayList<Object[]>();
-				IArgAdapter argAdapter = argHelper.getAdapter(field);
-				if (argAdapter == null) {
-					LOG.error("cannot find adapter to handle FIELD:" + field);
-				} else {
-					for (String[] line : lines) {
-						try {
-							System.out.printf("linkage:%s\n",line[idxReq]);
-							if (linkage.get(line[idxReq]) != null)
-								args.add(argAdapter.adapter(linkage, line, i,idxReq,tmReq));
-						} catch (ParseException e) {
-							LOG.error("dataformat error in : " + line, e);
+			Field[] _fs = BBHistoryPriceItem.class.getDeclaredFields();
+			for (Field _f : _fs) {
+				if (_f.isAnnotationPresent(EDMField.class)) {
+					EDMField fieldAttr = _f.getAnnotation(EDMField.class);
+					String fieldName = fieldAttr.value().equalsIgnoreCase("") ? _f
+						.getName() : fieldAttr.value();
+					Class<?> fieldType = fieldAttr.type();
+					final Map<String, String> values = ispc_mapping
+						.get(fieldName);
+					if (values == null) {
+						LOG.warn("cannot find mapping for " + values);
+					} else {
+						final List<BBHistoryPriceItem> actualSaveList = new ArrayList<BBHistoryPriceItem>();
+						for (BBHistoryPriceItem bb : bblist) {
+							if (bb.getLinkageIssue() != null) {
+								actualSaveList.add(bb);
+							}
 						}
-					}
-					int[] results = historicalPriceService.batchUpdate(
-							insert_ispc, args);
-					for (int j = 0; j < results.length; j++) {
-						if (results[j] == Statement.SUCCESS_NO_INFO
-								|| results[j] > 0) {
-							// success
-						} else {
-							LOG.error("Load failed:"
-									+ Arrays.toString(args.get(j)));
+						if (actualSaveList.size() > 0) {
+							BatchPreparedStatementSetter setter = new BatchPreparedStatementSetter() {
+
+								@Override
+								public void setValues(PreparedStatement pstmt,
+									int i) throws SQLException {
+									BBHistoryPriceItem bb = actualSaveList
+										.get(i);
+									for (String key : values.keySet()) {
+
+									}
+								}
+
+								@Override
+								public int getBatchSize() {
+									return actualSaveList.size();
+								}
+							};
 						}
 					}
 				}
 			}
 		} else {
-			// unspported in current version
+
 		}
 	}
-	
-	public void standardLoad(ResponseMessage rm) throws SQLException{
-		Map<String, LinkageIssue> linkage=this.linkage(rm);
-		if(this.preprocess(rm)){
-			this.produceBatchs(rm, linkage, true);
-		}else{
-			LOG.error("unsupport");
-		}
+
+	public void standardLoad(ResponseMessage rm) throws SQLException {
+		// Map<String, LinkageIssue> linkage = this.linkage(rm);
+		// if (this.preprocess(rm)) {
+		// this.produceBatchs(rm, linkage, true);
+		// } else {
+		// LOG.error("unsupport");
+		// }
 	}
+
+	public List<BBHistoryPriceItem> parseResponseMessage(ResponseMessage rm)
+		throws Exception {
+		List<BBHistoryPriceItem> bblist = new LinkedList<BBHistoryPriceItem>();
+		Map<String, BBHistoryPriceItem> cache = new HashMap<String, BBHistoryPriceItem>();
+		String[] header = rm.getHeaders();
+		int memIndex = -1, dateIndex = -1;
+		int prefixCnt = 2;
+		for (int i = 0; i < header.length; i++) {
+			if ("##MEM".equalsIgnoreCase(header[i])) {
+				memIndex = i;
+				prefixCnt--;
+			} else if ("##DATE".equalsIgnoreCase(header[i])) {
+				dateIndex = i;
+				prefixCnt--;
+			}
+			if (prefixCnt <= 0) {
+				break;
+			}
+		}
+		if (prefixCnt > 0) {
+			throw new Exception("Invalid Response");
+		}
+		for (int i = rm.getFieldBeginIndex(); i < header.length; i++) {
+			String name = header[i];
+			Method setMethod = null;
+			try {
+				// 通过反射 找到该属性的设置方法
+				setMethod = BBHistoryPriceItem.class.getMethod("set" + name,
+					String.class);
+			} catch (Exception e) {
+				// 没有该属性则警告
+				LOG.warn("cannot find properties " + name
+					+ " in BBHistoryPriceItem class");
+				continue;
+			}
+			for (String[] __clm : rm.getColumns()) {
+				String date = __clm[dateIndex];
+				String mString = __clm[memIndex];
+				String key = "#" + date + "#" + mString;
+				BBHistoryPriceItem bbp = cache.get(key);
+				// 第一次如果没有找到则创建
+				if (bbp == null) {
+					bbp = new BBHistoryPriceItem();
+					bbp.setDate(date);
+					bbp.setIdContext(mString);
+					cache.put(key, bbp);
+				}
+				// 设置属性
+				setMethod.invoke(bbp, __clm[i]);
+			}
+		}
+		for (Entry<String, BBHistoryPriceItem> entry : cache.entrySet()) {
+			bblist.add(entry.getValue());
+		}
+		return bblist;
+	}
+
 }

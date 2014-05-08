@@ -1,5 +1,10 @@
 package com.citics.edm.etl.bb;
 
+/**
+ * 
+ * @author huliang
+ * 链接到Golden Source模型内的Issue
+ */
 public class LinkageIssue {
 	
 	private String instr_id;
