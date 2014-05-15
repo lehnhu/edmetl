@@ -1,19 +1,15 @@
 package com.citics.edm.etl.bb;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.math.BigDecimal;
-import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 
 import javax.annotation.PostConstruct;
 
@@ -25,6 +21,7 @@ import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import com.citics.edm.etl.bb.util.Utils;
 import com.citics.edm.etl.service.IETLHistoricalPriceService;
 import com.citics.edm.service.IEDMPropertyService;
 import com.citics.edm.service.Query;
@@ -49,32 +46,21 @@ public class EdmHistoryPriceKit {
 	@Autowired
 	private IEDMPropertyService EDMPropertyService;
 
+	@Autowired
+	private RequestReplyKit requestReplyKit;
+	
 	@SuppressWarnings("unchecked")
 	@PostConstruct
 	public void init() {
 		insert_ispc_query = EDMPropertyService
-			.getQuery("edmetl.bb.linkage_sql");
+			.getQuery("edmetl.bb.insert_ispc");
 		String json_str = EDMPropertyService
 			.getStringProperty("edmetl.bb.ispc_mapping");
 		Gson gson = new Gson();
 		ispc_mapping = gson.fromJson(json_str, Map.class);
 
 	}
-
-	/**
-	 * 
-	 * @param rm
-	 * @return
-	 */
-	protected boolean preprocess(ResponseMessage rm) {
-		if (!"horizontal".equalsIgnoreCase(rm.getMeta("HIST_FORMAT")))
-			return false;
-		if (!"gethistory".equalsIgnoreCase(rm.getMeta("PROGRAMNAME")))
-			return false;
-		return true;
-	}
-
-	public void linkage(List<BBHistoryPriceItem> bblist) {
+	private void linkage(List<BBHistoryPriceItem> bblist) {
 		LOG.debug("linkage...");
 		Map<String, LinkageIssue> cache = new HashMap<String, LinkageIssue>();
 		for (BBHistoryPriceItem bb : bblist) {
@@ -102,13 +88,14 @@ public class EdmHistoryPriceKit {
 	private void singleInsertSinglePriceField(final Field f,
 		List<BBHistoryPriceItem> bblist) {
 
+		LOG.debug("step into single price func");
 		final List<BBHistoryPriceItem> validPriceValueList = new ArrayList<BBHistoryPriceItem>();
 		for (BBHistoryPriceItem bb : bblist) {
 			try {
 				String priceValue = (String) f.get(bb);
 				priceValue = priceValue == null ? priceValue : priceValue
 					.toString();
-				if (priceValue == null || priceValue.equals("")
+				if (priceValue == null || priceValue.trim().equals("")
 					|| priceValue.equals("N.A.")) {
 					continue;
 				}
@@ -119,6 +106,7 @@ public class EdmHistoryPriceKit {
 				e.printStackTrace();
 			}
 		}
+		LOG.debug("single Insert price:"+validPriceValueList.size());
 		if (validPriceValueList.size() == 0) {
 			return;
 		}
@@ -140,7 +128,18 @@ public class EdmHistoryPriceKit {
 				throws SQLException {
 				BBHistoryPriceItem bb = validPriceValueList.get(row);
 				for (int i = 0; i < argTypes.length; i++) {
-					if ("prc_tms".equalsIgnoreCase(argNames[i])) {
+					if("iss_prc_id".equalsIgnoreCase(argNames[i])){
+						pstmt.setString(i+1, historicalPriceService.getOID());
+					}else if("instr_id".equalsIgnoreCase(argNames[i])){
+						pstmt.setString(i+1, bb.getLinkageIssue().getInstr_id());
+					}else if("isid_oid".equalsIgnoreCase(argNames[i])){
+						pstmt.setString(i+1, bb.getLinkageIssue().getIssid_oid());
+					}else if("mkt_oid".equalsIgnoreCase(argNames[i])){
+						pstmt.setString(i+1, bb.getLinkageIssue().getMkt_oid());
+					}else if("prc_curr_cde".equalsIgnoreCase(argNames[i])){
+						pstmt.setString(i+1, bb.getLinkageIssue().getDenom_curr_code());
+					}
+					else if ("prc_tms".equalsIgnoreCase(argNames[i])) {
 						try {
 							pstmt.setDate(i + 1,
 								new java.sql.Date(fmt.parse(bb.getDate())
@@ -169,7 +168,7 @@ public class EdmHistoryPriceKit {
 								e.printStackTrace();
 							}
 						}else{
-							
+							LOG.debug("unknown field type :"+argNames[i]+","+argTypes[i]);
 						}
 					}
 				}
@@ -187,7 +186,7 @@ public class EdmHistoryPriceKit {
 	}
 
 	private boolean check(Field _f) {
-		if (_f.getDeclaringClass() != String.class
+		if (_f.getType() != String.class
 			|| !_f.isAnnotationPresent(EDMField.class)) {
 			return false;
 		}
@@ -195,6 +194,7 @@ public class EdmHistoryPriceKit {
 		String fieldName = fieldAttr.value().equalsIgnoreCase("") ? _f
 			.getName() : fieldAttr.value();
 		Map<String, String> values = ispc_mapping.get(fieldName);
+		LOG.debug(ispc_mapping);
 		if (values == null) {
 			return false;
 		} else {
@@ -209,6 +209,7 @@ public class EdmHistoryPriceKit {
 				actualSaveList.add(bb);
 			}
 		}
+		LOG.debug("batch insert only:"+actualSaveList.size());
 		if (actualSaveList.size() > 0) {
 			Field[] _fs = BBHistoryPriceItem.class.getDeclaredFields();
 			for (Field _f : _fs) {
@@ -220,7 +221,7 @@ public class EdmHistoryPriceKit {
 		}
 	}
 
-	protected void loadBatchs(List<BBHistoryPriceItem> bblist,
+	private void loadBatchs(List<BBHistoryPriceItem> bblist,
 		boolean alwaysInsert) throws SQLException, IllegalArgumentException,
 		IllegalAccessException {
 		if (alwaysInsert) {
@@ -230,70 +231,14 @@ public class EdmHistoryPriceKit {
 		}
 	}
 
-	public void standardLoad(ResponseMessage rm) throws SQLException {
-		// Map<String, LinkageIssue> linkage = this.linkage(rm);
-		// if (this.preprocess(rm)) {
-		// this.produceBatchs(rm, linkage, true);
-		// } else {
-		// LOG.error("unsupport");
-		// }
+	public void standardLoad(String path) throws Exception {
+		List<String> lines=Utils.readLines(path);
+		List<BBHistoryPriceItem> bblist=requestReplyKit.parseMessage(lines);
+		linkage(bblist);
+		LOG.debug("parse from response. size="+bblist.size());
+		loadBatchs(bblist, true);
 	}
 
-	public List<BBHistoryPriceItem> parseResponseMessage(ResponseMessage rm)
-		throws Exception {
-		List<BBHistoryPriceItem> bblist = new LinkedList<BBHistoryPriceItem>();
-		Map<String, BBHistoryPriceItem> cache = new HashMap<String, BBHistoryPriceItem>();
-		String[] header = rm.getHeaders();
-		int memIndex = -1, dateIndex = -1;
-		int prefixCnt = 2;
-		for (int i = 0; i < header.length; i++) {
-			if ("##MEM".equalsIgnoreCase(header[i])) {
-				memIndex = i;
-				prefixCnt--;
-			} else if ("##DATE".equalsIgnoreCase(header[i])) {
-				dateIndex = i;
-				prefixCnt--;
-			}
-			if (prefixCnt <= 0) {
-				break;
-			}
-		}
-		if (prefixCnt > 0) {
-			throw new Exception("Invalid Response");
-		}
-		for (int i = rm.getFieldBeginIndex(); i < header.length; i++) {
-			String name = header[i];
-			Method setMethod = null;
-			try {
-				// 通过反射 找到该属性的设置方法
-				setMethod = BBHistoryPriceItem.class.getMethod("set" + name,
-					String.class);
-			} catch (Exception e) {
-				// 没有该属性则警告
-				LOG.warn("cannot find properties " + name
-					+ " in BBHistoryPriceItem class");
-				continue;
-			}
-			for (String[] __clm : rm.getColumns()) {
-				String date = __clm[dateIndex];
-				String mString = __clm[memIndex];
-				String key = "#" + date + "#" + mString;
-				BBHistoryPriceItem bbp = cache.get(key);
-				// 第一次如果没有找到则创建
-				if (bbp == null) {
-					bbp = new BBHistoryPriceItem();
-					bbp.setDate(date);
-					bbp.setIdContext(mString);
-					cache.put(key, bbp);
-				}
-				// 设置属性
-				setMethod.invoke(bbp, __clm[i]);
-			}
-		}
-		for (Entry<String, BBHistoryPriceItem> entry : cache.entrySet()) {
-			bblist.add(entry.getValue());
-		}
-		return bblist;
-	}
+
 
 }

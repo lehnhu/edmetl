@@ -4,10 +4,10 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.List;
 import java.util.Properties;
 
 import org.apache.commons.io.IOUtils;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,8 +15,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 import com.citics.edm.etl.bb.RequestReplyKit;
-import com.citics.edm.etl.bb.ResponseMessage;
-import com.citics.edm.etl.bb.util.Utils;
+import com.citics.edm.etl.bb.Result;
 
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration("/test-applicationContext.xml")
@@ -26,7 +25,7 @@ public class BBRequestReplyTest {
 	private RequestReplyKit requestReplyService;
 
 
-	//@Test
+	@Test
 	public void test() throws IOException {
 
 		SimpleDateFormat fmt = new SimpleDateFormat("yyyyMMddHH");
@@ -46,7 +45,8 @@ public class BBRequestReplyTest {
 		IOUtils.write(reqStr, w);
 		w.close();
 
-		requestReplyService.requestReply(requestFile, replyFile, outputPath);
+		Result r=requestReplyService.requestReply(requestFile, outputPath);
+		Assert.assertEquals(r.status, Result.STATUS.SUCCESS);
 		
 	}
 
@@ -55,10 +55,5 @@ public class BBRequestReplyTest {
 		requestReplyService.fetchResponseFile("edm_0000011074", "D:\\citics\\bbloader\\java\\resp");
 	}
 	
-	@Test
-	public void testResponseParse() throws IOException{
-		List<String> lines=Utils.readLines("D:\\test_re_hist2014050713");
-		ResponseMessage rp=requestReplyService.parseResponseMessage(lines);
-		System.out.println(rp);
-	}
+
 }

@@ -14,7 +14,8 @@ insert into ft_t_ispc
    data_src_id,
    unit_cprc,
    adjst_tms,
-   last_chg_tms
+   last_chg_tms,
+   prc_curr_cde
    )
 values
 (
@@ -33,5 +34,6 @@ values
    'BB',
    :unit_cprc,
    sysdate,
-   sysdate
+   sysdate,
+   :prc_curr_cde
 )
