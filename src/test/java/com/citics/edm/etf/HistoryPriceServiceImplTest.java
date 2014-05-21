@@ -1,9 +1,5 @@
 package com.citics.edm.etf;
 
-import java.io.IOException;
-import java.sql.SQLException;
-import java.text.ParseException;
-
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +17,7 @@ public class HistoryPriceServiceImplTest {
 	private IHistoryPriceService historyPriceService;
 	
 	@Test
-	public void test() throws ParseException, IOException, SQLException{
-		historyPriceService.loadHistoryPrices("NIASQ Index\nAAPL Equity", "20140101", "20140401");
+	public void test() throws Exception{
+		historyPriceService.syncLoadHistoryPrices("NIASQ Index\nAAPL Equity", "20140101", "20140401");
 	}
 }

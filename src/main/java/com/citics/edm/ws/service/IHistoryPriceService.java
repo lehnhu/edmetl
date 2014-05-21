@@ -11,7 +11,7 @@ import javax.jws.WebService;
 public interface IHistoryPriceService {
 
 	/**
-	 * 载入历史价格
+	 * 载入历史价格——同步方法
 	 * 
 	 * @param issueList
 	 *            传入券的列表，每行一个券 Ticker+Marketsector
@@ -24,8 +24,11 @@ public interface IHistoryPriceService {
 	 * @throws IOException
 	 * @throws SQLException
 	 */
-	boolean loadHistoryPrices(@WebParam(name = "issueList") String issueList,
-			@WebParam(name = "fromdate") String fromDate,
-			@WebParam(name = "todate") String toDate) throws ParseException,
-			IOException, SQLException;
+	boolean syncLoadHistoryPrices(@WebParam(name="issueList") String issueList,
+		@WebParam(name="fromDate") String fromDate,
+		@WebParam(name="toDate") String toDate) throws Exception;
+
+	boolean asyncLoadHistoryPrices(@WebParam(name="issueList") String issueList,
+		@WebParam(name="fromDate") String fromDate,
+		@WebParam(name="toDate") String toDate) throws Exception;
 }

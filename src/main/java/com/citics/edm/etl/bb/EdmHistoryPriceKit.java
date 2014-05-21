@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -122,6 +123,7 @@ public class EdmHistoryPriceKit {
 		for (int i = 0; i < argTypes.length; i++) {
 			argValues[i] = values.get(argNames[i]);
 		}
+		
 		BatchPreparedStatementSetter setter = new BatchPreparedStatementSetter() {
 			@Override
 			public void setValues(PreparedStatement pstmt, int row)
@@ -182,7 +184,7 @@ public class EdmHistoryPriceKit {
 
 		int[] rs = gsJdbcTemplate
 			.batchUpdate(insert_ispc_query.query(), setter);
-		System.out.println(rs);
+		System.out.println(Arrays.toString(rs));
 	}
 
 	private boolean check(Field _f) {
