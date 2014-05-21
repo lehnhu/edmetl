@@ -81,8 +81,8 @@ public class EdmHistoryPriceKit {
 					_linkissue = issIds.get(0);
 					cache.put(key, _linkissue);
 				}
-				bb.setLinkageIssue(_linkissue);
 			}
+			bb.setLinkageIssue(_linkissue);
 		}
 	}
 
@@ -236,7 +236,11 @@ public class EdmHistoryPriceKit {
 	public void standardLoad(String path) throws Exception {
 		List<String> lines=Utils.readLines(path);
 		List<BBHistoryPriceItem> bblist=requestReplyKit.parseMessage(lines);
+		System.out.println(bblist.size());
 		linkage(bblist);
+		for(BBHistoryPriceItem bb:bblist){
+			System.out.println(bb);
+		}
 		LOG.debug("parse from response. size="+bblist.size());
 		loadBatchs(bblist, true);
 	}

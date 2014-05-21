@@ -17,7 +17,7 @@ public class EdmHistoryPriceLoadTest {
 	
 	@Test
 	public void testLoad() throws Exception{
-		EdmHistoryPriceKit.standardLoad("D:\\edm_0000012177");
+		EdmHistoryPriceKit.standardLoad("D:\\edm_0000012333");
 	}
 
 }
