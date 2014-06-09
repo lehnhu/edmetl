@@ -79,12 +79,12 @@ public class HistoryPriceServiceImpl implements IHistoryPriceService {
 		if (fromDate == null) {
 			to = new Date();
 		} else {
-			to = fmt.parse(toDate);
+			to = fmt.parse(toDate.trim());
 		}
 		if (toDate == null) {
 			from = plusDay(to, -30); // 默认30天
 		} else {
-			from = fmt.parse(fromDate);
+			from = fmt.parse(fromDate.trim());
 		}
 		/*
 		 * 格式化issueList
@@ -107,7 +107,9 @@ public class HistoryPriceServiceImpl implements IHistoryPriceService {
 		props.setProperty("replyfilename", replyFile);
 		props.setProperty("issuelist", sb.toString());
 
+		
 		String requestMsg = requestReplyKit.formartRequestMessage(props);
+//		System.out.println(requestMsg);
 		String storedFileName = this.requestFilePath + File.separator
 			+ replyFile + ".req";
 		Utils.writeFile(storedFileName, requestMsg);
